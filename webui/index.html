@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SaveGuardian · 存档守护</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="ember"></div>
+  <header class="topbar">
+    <div class="brand">
+      <span class="flame">✦</span>
+      <h1>SAVE<span>GUARDIAN</span></h1>
+    </div>
+    <div class="controls">
+      <label class="field">
+        <span>游戏档案</span>
+        <select id="gameSelect"></select>
+      </label>
+      <button id="manageGamesBtn" class="ghost">管理档案</button>
+      <a class="github-link" href="https://github.com/nanocm/save-guardian" target="_blank" rel="noopener" title="在 GitHub 上查看">GitHub ↗</a>
+    </div>
+  </header>
+
+  <main>
+    <section class="actionbar">
+      <input id="noteInput" type="text" maxlength="120" placeholder="备份备注（可选）——例如：打Boss前" />
+      <button id="backupBtn" class="primary">立即备份</button>
+      <span id="hotkeyHint" class="hint"></span>
+    </section>
+
+    <section class="listwrap">
+      <div class="list-head">
+        <div class="lh-left">
+          <h2>备份记录</h2>
+          <label class="selall"><input type="checkbox" id="selectAll" /> 全选</label>
+        </div>
+        <div class="lh-right">
+          <button id="deleteSelectedBtn" class="danger small" hidden>删除选中 (0)</button>
+          <button id="refreshBtn" class="ghost small">刷新</button>
+        </div>
+      </div>
+      <div id="backupList" class="backup-list"></div>
+      <p id="emptyHint" class="empty" hidden>还没有备份。点击「立即备份」或按热键创建第一个。</p>
+    </section>
+
+    <footer class="site-footer">
+      <span>SaveGuardian · 存档守护</span>
+      <span class="sep">·</span>
+      <span>MIT License</span>
+    </footer>
+  </main>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <!-- Manage games modal -->
+  <div id="gamesModal" class="modal" hidden>
+    <div class="modal-card">
+      <h3>管理游戏档案</h3>
+      <div id="gamesTable" class="games-table"></div>
+      <hr />
+      <h4>新增 / 更新档案</h4>
+      <label class="field block"><span>档案名称</span>
+        <input id="gName" type="text" placeholder="例如 Project Plague" />
+      </label>
+      <label class="field block"><span>要备份的文件夹（这个文件夹会被整体备份）</span>
+        <div class="path-row">
+          <input id="gSource" type="text" placeholder="例如 C:\\Users\\...\\GameSlots\\maingame1" />
+          <button data-pick="gSource" class="ghost small">选择…</button>
+        </div>
+      </label>
+      <label class="field block"><span>备份目标目录</span>
+        <div class="path-row">
+          <input id="gBackup" type="text" placeholder="D:\\MySaveBackups\\..." />
+          <button data-pick="gBackup" class="ghost small">选择…</button>
+        </div>
+      </label>
+      <div class="modal-actions">
+        <button id="saveGameBtn" class="primary">保存档案</button>
+        <button id="closeGamesBtn" class="ghost">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Restore confirm modal -->
+  <div id="restoreModal" class="modal" hidden>
+    <div class="modal-card">
+      <h3>恢复到此备份？</h3>
+      <p class="warn">请先在游戏里 <b>退回到标题界面</b>（无需完全退出）。恢复前会自动为当前存档创建一次安全快照。</p>
+      <p id="restoreTarget" class="mono"></p>
+      <div class="modal-actions">
+        <button id="confirmRestoreBtn" class="danger">确认恢复</button>
+        <button id="cancelRestoreBtn" class="ghost">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

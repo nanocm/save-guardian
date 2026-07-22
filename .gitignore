@@ -1,0 +1,14 @@
+# Binaries
+SaveGuardian.exe
+/sg
+sg_linux
+
+# Runtime config generated next to the exe
+saveguardian.config.json
+
+# Personal backup output
+/Saves/
+
+# Go
+/vendor/
+*.test
