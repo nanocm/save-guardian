@@ -82,6 +82,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/backups/batch-delete", s.guard(s.handleBatchDelete))
 	mux.HandleFunc("/api/backup", s.guard(s.handleBackup))
 	mux.HandleFunc("/api/restore", s.guard(s.handleRestore))
+	mux.HandleFunc("/api/verify", s.guard(s.handleVerify))
 	mux.HandleFunc("/api/pick-folder", s.guard(s.handlePickFolder))
 	mux.HandleFunc("/api/events", s.guard(s.handleEvents))
 }
@@ -280,6 +281,22 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 	}
 	s.hub.broadcast("update")
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "safetySnapshot": safety})
+}
+
+// handleVerify re-hashes a backup against its recorded checksums and reports
+// which files (if any) are corrupt. Read-only, so it needs no op-lock.
+func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) {
+	m, err := s.managerFor(r.URL.Query().Get("game"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	bad, err := m.Verify(r.URL.Query().Get("timestamp"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": len(bad) == 0, "corrupt": bad})
 }
 
 func (s *Server) handlePickFolder(w http.ResponseWriter, r *http.Request) {

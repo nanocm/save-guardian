@@ -255,3 +255,60 @@ hr { border: none; border-top: 1px solid var(--line); margin: 18px 0; }
 .game-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; }
 .game-row .g-name { color: var(--gold-soft); font-weight: 600; }
 .game-row .g-paths { font-size: 11px; color: var(--muted); }
+
+/* ---- stats + legend ---- */
+.statsbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 18px;
+  flex-wrap: wrap;
+}
+.stats { color: var(--muted); font-size: 13px; letter-spacing: 1px; }
+.legend { display: flex; gap: 14px; }
+.legend .lg { font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 6px; text-transform: uppercase; letter-spacing: 1px; }
+.legend .lg::before { content: ""; width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.legend .lg-manual::before { background: var(--gold); }
+.legend .lg-hotkey::before { background: var(--ok); }
+.legend .lg-pre-restore::before { background: #6f7fae; }
+
+/* ---- filter bar ---- */
+.filterbar { display: flex; gap: 12px; align-items: center; margin-top: 14px; flex-wrap: wrap; }
+.filterbar input { flex: 1; min-width: 200px; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip {
+  padding: 6px 14px;
+  font-size: 12px;
+  border-radius: 20px;
+  background: transparent;
+  letter-spacing: 1px;
+}
+.chip.active {
+  background: linear-gradient(180deg, #a9863a, #7d6226);
+  border-color: #c9a24b;
+  color: #1a1408;
+  font-weight: 700;
+}
+
+/* ---- loading skeleton ---- */
+.loading { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+.loading .sk {
+  height: 66px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line);
+  background: linear-gradient(90deg, var(--panel) 25%, var(--panel2) 37%, var(--panel) 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.4s ease infinite;
+}
+@keyframes shimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
+
+/* ---- action icons + integrity badge ---- */
+.ic { width: 14px; height: 14px; vertical-align: -2px; margin-right: 5px; }
+button.small .ic { margin-right: 4px; }
+.b-badge { font-size: 10px; padding: 2px 8px; border-radius: 4px; margin-left: 8px; letter-spacing: 1px; text-transform: uppercase; }
+.b-badge.ok { color: var(--ok); border: 1px solid rgba(125, 154, 78, 0.5); }
+.b-badge.bad { color: #e08a76; border: 1px solid rgba(177, 67, 47, 0.6); background: rgba(177, 67, 47, 0.08); }
+
+#undoBtn { color: var(--gold-soft); }

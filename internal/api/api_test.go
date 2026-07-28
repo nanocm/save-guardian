@@ -119,3 +119,46 @@ func TestConcurrentBackupsAreSerialized(t *testing.T) {
 		t.Fatalf("expected %d distinct backups, got %d", n, len(list))
 	}
 }
+
+func TestVerifyEndpoint(t *testing.T) {
+	s, mux := testServer(t)
+	root := t.TempDir()
+	src := filepath.Join(root, "save")
+	bak := filepath.Join(root, "bak")
+	if err := os.MkdirAll(src, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(src, "a.sav"), []byte("DATA"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.cfg.UpsertGame(config.Game{Name: "G", Source: src, BackupRoot: bak}); err != nil {
+		t.Fatal(err)
+	}
+	m, _ := s.managerFor("G")
+	meta, err := m.Create("", "manual")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	get := func() string {
+		req := httptest.NewRequest(http.MethodGet,
+			"/api/verify?game=G&timestamp="+meta.Timestamp, nil)
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("verify status %d: %s", rec.Code, rec.Body.String())
+		}
+		return rec.Body.String()
+	}
+
+	if body := get(); !strings.Contains(body, `"ok":true`) {
+		t.Fatalf("expected intact backup, got %s", body)
+	}
+	// Corrupt a backed-up file and re-check.
+	if err := os.WriteFile(filepath.Join(bak, meta.Timestamp, "a.sav"), []byte("X"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if body := get(); !strings.Contains(body, `"ok":false`) || !strings.Contains(body, "a.sav") {
+		t.Fatalf("expected corruption reported, got %s", body)
+	}
+}
