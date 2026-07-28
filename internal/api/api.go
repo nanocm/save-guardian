@@ -65,17 +65,41 @@ func New(cfg *config.Config, pick FolderPicker) *Server {
 	return &Server{cfg: cfg, pick: pick, hub: newHub()}
 }
 
-// Register attaches API routes to the given mux.
+// Register attaches API routes to the given mux. Every /api handler is wrapped
+// with guard so that cross-origin requests (a malicious web page trying to
+// trigger a destructive restore/delete against the local server) are rejected.
 func (s *Server) Register(mux *http.ServeMux) {
-	mux.HandleFunc("/api/config", s.handleConfig)
-	mux.HandleFunc("/api/games", s.handleGames)
-	mux.HandleFunc("/api/active", s.handleActive)
-	mux.HandleFunc("/api/backups", s.handleBackups)
-	mux.HandleFunc("/api/backups/batch-delete", s.handleBatchDelete)
-	mux.HandleFunc("/api/backup", s.handleBackup)
-	mux.HandleFunc("/api/restore", s.handleRestore)
-	mux.HandleFunc("/api/pick-folder", s.handlePickFolder)
-	mux.HandleFunc("/api/events", s.handleEvents)
+	mux.HandleFunc("/api/config", s.guard(s.handleConfig))
+	mux.HandleFunc("/api/games", s.guard(s.handleGames))
+	mux.HandleFunc("/api/active", s.guard(s.handleActive))
+	mux.HandleFunc("/api/backups", s.guard(s.handleBackups))
+	mux.HandleFunc("/api/backups/batch-delete", s.guard(s.handleBatchDelete))
+	mux.HandleFunc("/api/backup", s.guard(s.handleBackup))
+	mux.HandleFunc("/api/restore", s.guard(s.handleRestore))
+	mux.HandleFunc("/api/pick-folder", s.guard(s.handlePickFolder))
+	mux.HandleFunc("/api/events", s.guard(s.handleEvents))
+}
+
+// guard rejects requests whose Origin header is present but does not match the
+// local server. Browsers attach Origin to cross-site fetches (including
+// "simple" text/plain POSTs that skip the CORS preflight), so this blocks CSRF
+// against state-changing endpoints while leaving the same-origin web UI and
+// non-browser clients (empty Origin) working.
+func (s *Server) guard(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if origin := r.Header.Get("Origin"); origin != "" && !s.allowedOrigin(origin) {
+			writeErr(w, http.StatusForbidden, "cross-origin request rejected")
+			return
+		}
+		next(w, r)
+	}
+}
+
+// allowedOrigin reports whether origin is this local server. Port is set once
+// at load and never mutated, so reading it here is race-free.
+func (s *Server) allowedOrigin(origin string) bool {
+	return origin == fmt.Sprintf("http://127.0.0.1:%d", s.cfg.Port) ||
+		origin == fmt.Sprintf("http://localhost:%d", s.cfg.Port)
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -315,7 +339,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 // HotkeyBackup backs up the active game's source folder and notifies the UI.
 // It returns the created backup meta so callers can give audible feedback.
 func (s *Server) HotkeyBackup() (*backup.Meta, error) {
-	m, err := s.managerFor(s.cfg.ActiveGame)
+	m, err := s.managerFor(s.cfg.Active())
 	if err != nil {
 		return nil, err
 	}

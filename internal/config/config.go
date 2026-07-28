@@ -84,6 +84,35 @@ func (c *Config) Save() error {
 // Path returns the config file path.
 func (c *Config) Path() string { return c.path }
 
+// Active returns the active game name under the lock, safe to call
+// concurrently with UpsertGame/DeleteGame/SetActive.
+func (c *Config) Active() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.ActiveGame
+}
+
+// MarshalJSON serializes the config under the lock so that encoding it (e.g.
+// for the /api/config response or Save) never races with concurrent mutations
+// of the Games slice or ActiveGame. The unexported mutex/path fields are
+// naturally excluded.
+func (c *Config) MarshalJSON() ([]byte, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	type alias struct {
+		ActiveGame string `json:"activeGame"`
+		Hotkey     string `json:"hotkey"`
+		Port       int    `json:"port"`
+		Games      []Game `json:"games"`
+	}
+	return json.Marshal(alias{
+		ActiveGame: c.ActiveGame,
+		Hotkey:     c.Hotkey,
+		Port:       c.Port,
+		Games:      c.Games,
+	})
+}
+
 // Game returns the game profile with the given name.
 func (c *Config) Game(name string) (Game, bool) {
 	c.mu.Lock()

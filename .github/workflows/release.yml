@@ -20,8 +20,11 @@ jobs:
         with:
           go-version: "1.22"
 
+      - name: Vet
+        run: go vet ./...
+
       - name: Run tests
-        run: go test ./...
+        run: go test -race ./...
 
       - name: Build Windows executable
         run: GOOS=windows GOARCH=amd64 go build -ldflags "-s -w" -o SaveGuardian.exe .

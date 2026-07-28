@@ -190,8 +190,31 @@ func (m *Manager) UpdateNote(timestamp, note string) error {
 	return writeMeta(dir, meta)
 }
 
+// Verify re-hashes every file recorded in a backup's meta.json and returns the
+// relative paths whose size or SHA-256 no longer matches (or that are missing).
+// An empty slice means the backup is intact.
+func (m *Manager) Verify(timestamp string) ([]string, error) {
+	if err := validName(timestamp); err != nil {
+		return nil, err
+	}
+	dir := filepath.Join(m.BackupRoot, timestamp)
+	meta, err := readMeta(dir)
+	if err != nil {
+		return nil, err
+	}
+	var bad []string
+	for _, f := range meta.Files {
+		sum, size, err := hashFile(filepath.Join(dir, filepath.FromSlash(f.Path)))
+		if err != nil || size != f.Size || sum != f.SHA256 {
+			bad = append(bad, f.Path)
+		}
+	}
+	return bad, nil
+}
+
 // Restore overwrites the Source folder with the contents of a backup.
-// It first creates a pre-restore safety snapshot of the current state.
+// It verifies the backup's checksums first, then creates a pre-restore safety
+// snapshot of the current state before overwriting.
 func (m *Manager) Restore(timestamp string) (safety *Meta, err error) {
 	if err := validName(timestamp); err != nil {
 		return nil, err
@@ -199,6 +222,15 @@ func (m *Manager) Restore(timestamp string) (safety *Meta, err error) {
 	backupDir := filepath.Join(m.BackupRoot, timestamp)
 	if _, err := os.Stat(backupDir); err != nil {
 		return nil, fmt.Errorf("backup not found: %w", err)
+	}
+
+	// Refuse to restore a corrupted backup over the live save.
+	bad, err := m.Verify(timestamp)
+	if err != nil {
+		return nil, fmt.Errorf("integrity check failed: %w", err)
+	}
+	if len(bad) > 0 {
+		return nil, fmt.Errorf("备份已损坏，校验和不匹配（%d 个文件）：%s", len(bad), strings.Join(bad, ", "))
 	}
 
 	dst := m.Source
@@ -296,6 +328,21 @@ func copyFile(src, dst string) (string, int64, error) {
 		return "", 0, err
 	}
 	if err := out.Sync(); err != nil {
+		return "", 0, err
+	}
+	return hex.EncodeToString(h.Sum(nil)), n, nil
+}
+
+// hashFile returns the sha256 and size of a file without copying it.
+func hashFile(path string) (string, int64, error) {
+	in, err := os.Open(path)
+	if err != nil {
+		return "", 0, err
+	}
+	defer in.Close()
+	h := sha256.New()
+	n, err := io.Copy(h, in)
+	if err != nil {
 		return "", 0, err
 	}
 	return hex.EncodeToString(h.Sum(nil)), n, nil

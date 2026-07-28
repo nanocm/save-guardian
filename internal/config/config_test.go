@@ -1,8 +1,11 @@
 package config
 
 import (
+	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -86,4 +89,27 @@ func TestLegacySourceRootMigration(t *testing.T) {
 	if g.LegacySourceRoot != "" {
 		t.Fatalf("legacy field not cleared: %+v", g)
 	}
+}
+
+// TestConcurrentMarshalAndUpsert exercises the config lock: marshaling (the
+// /api/config response path) must not race with concurrent game mutations.
+// Meaningful under `go test -race`.
+func TestConcurrentMarshalAndUpsert(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "config.json")
+	c, _ := Load(p)
+	var wg sync.WaitGroup
+	for i := 0; i < 20; i++ {
+		wg.Add(2)
+		go func(n int) {
+			defer wg.Done()
+			_ = c.UpsertGame(Game{Name: fmt.Sprintf("g%d", n), Source: "/s", BackupRoot: "/b"})
+		}(i)
+		go func() {
+			defer wg.Done()
+			if _, err := json.Marshal(c); err != nil {
+				t.Errorf("marshal failed: %v", err)
+			}
+		}()
+	}
+	wg.Wait()
 }

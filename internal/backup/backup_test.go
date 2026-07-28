@@ -183,3 +183,49 @@ func TestTimestampTraversalRejected(t *testing.T) {
 		t.Fatal("expected traversal rejection on restore")
 	}
 }
+
+func TestVerifyDetectsCorruption(t *testing.T) {
+	src, bak := setup(t)
+	m, _ := New("g", src, bak, fixedNow())
+	meta, err := m.Create("v", "manual")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// An intact backup verifies clean.
+	if bad, err := m.Verify(meta.Timestamp); err != nil || len(bad) != 0 {
+		t.Fatalf("expected clean verify, got bad=%v err=%v", bad, err)
+	}
+	// Tampering a backed-up file is detected.
+	writeFile(t, filepath.Join(bak, meta.Timestamp, "maingame1.sav"), "TAMPERED")
+	bad, err := m.Verify(meta.Timestamp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bad) != 1 || bad[0] != "maingame1.sav" {
+		t.Fatalf("expected maingame1.sav flagged as corrupt, got %v", bad)
+	}
+}
+
+func TestRestoreRejectsCorruptBackup(t *testing.T) {
+	src, bak := setup(t)
+	m, _ := New("g", src, bak, fixedNow())
+	meta, err := m.Create("cp", "manual")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Corrupt the backup, then change the live save to a distinct value.
+	writeFile(t, filepath.Join(bak, meta.Timestamp, "maingame1.sav"), "CORRUPT")
+	live := filepath.Join(src, "maingame1.sav")
+	writeFile(t, live, "LIVE-STATE")
+
+	safety, err := m.Restore(meta.Timestamp)
+	if err == nil {
+		t.Fatal("expected restore to reject a corrupt backup")
+	}
+	if safety != nil {
+		t.Fatalf("no pre-restore snapshot should be created for a corrupt backup, got %+v", safety)
+	}
+	if got := readFile(t, live); got != "LIVE-STATE" {
+		t.Fatalf("live save must be left untouched, got %q", got)
+	}
+}
