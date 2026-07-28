@@ -4,6 +4,8 @@
 
 **魂类游戏的手动存档备份 / 恢复工具 —— 关键节点一键备份，翻车后一键回档。**
 
+简体中文 · [English](README.en.md)
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows-0078D6.svg)](https://github.com/nanocm/save-guardian/releases)
 [![Made with Go](https://img.shields.io/badge/made%20with-Go-00ADD8.svg)](https://go.dev)
