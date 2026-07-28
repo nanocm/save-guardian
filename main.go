@@ -40,7 +40,7 @@ func main() {
 	}
 
 	mux := http.NewServeMux()
-	srv := api.New(cfg, folderpick.Pick)
+	srv := api.New(cfg, folderpick.Pick, hotkey.Rearm)
 	srv.Register(mux)
 	mux.Handle("/", http.FileServer(http.FS(sub)))
 

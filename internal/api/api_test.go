@@ -19,7 +19,7 @@ func testServer(t *testing.T) (*Server, *http.ServeMux) {
 		t.Fatal(err)
 	}
 	cfg.Port = 8787 // matches the default; make the allowed origin explicit
-	s := New(cfg, nil)
+	s := New(cfg, nil, nil)
 	mux := http.NewServeMux()
 	s.Register(mux)
 	return s, mux
@@ -160,5 +160,30 @@ func TestVerifyEndpoint(t *testing.T) {
 	}
 	if body := get(); !strings.Contains(body, `"ok":false`) || !strings.Contains(body, "a.sav") {
 		t.Fatalf("expected corruption reported, got %s", body)
+	}
+}
+
+func TestHotkeyEndpoint(t *testing.T) {
+	s, mux := testServer(t)
+	post := func(hk string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/api/hotkey",
+			strings.NewReader(`{"hotkey":`+`"`+hk+`"}`))
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		return rec
+	}
+	// A valid hotkey is accepted and persisted.
+	if rec := post("Ctrl+Alt+F5"); rec.Code != http.StatusOK {
+		t.Fatalf("valid hotkey rejected: %d %s", rec.Code, rec.Body.String())
+	}
+	if s.cfg.Hotkey != "Ctrl+Alt+F5" {
+		t.Fatalf("hotkey not persisted: %q", s.cfg.Hotkey)
+	}
+	// An invalid hotkey (no main key) is rejected and does not change config.
+	if rec := post("Ctrl+Alt"); rec.Code != http.StatusBadRequest {
+		t.Fatalf("invalid hotkey accepted: %d", rec.Code)
+	}
+	if s.cfg.Hotkey != "Ctrl+Alt+F5" {
+		t.Fatalf("config changed on invalid hotkey: %q", s.cfg.Hotkey)
 	}
 }

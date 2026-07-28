@@ -10,3 +10,10 @@ func Listen(spec string, onTrigger func()) error {
 	}
 	select {} // block forever without firing
 }
+
+// Rearm validates the spec on non-Windows platforms but is otherwise a no-op,
+// since there is no global hotkey to re-register.
+func Rearm(spec string) error {
+	_, err := Parse(spec)
+	return err
+}

@@ -8,6 +8,7 @@ import (
 
 	"saveguardian/internal/backup"
 	"saveguardian/internal/config"
+	"saveguardian/internal/hotkey"
 )
 
 // FolderPicker opens a native folder chooser and returns the selected path.
@@ -52,9 +53,10 @@ func (h *hub) broadcast(msg string) {
 
 // Server wires the HTTP API to config and backup logic.
 type Server struct {
-	cfg  *config.Config
-	pick FolderPicker
-	hub  *hub
+	cfg   *config.Config
+	pick  FolderPicker
+	rearm func(string) error // live-updates the global hotkey; may be nil
+	hub   *hub
 
 	// opMu serializes state-changing backup operations (create/restore/
 	// delete/update-note) so that, e.g., a hotkey backup cannot run in the
@@ -63,12 +65,13 @@ type Server struct {
 	opMu sync.Mutex
 }
 
-// New creates an API server.
-func New(cfg *config.Config, pick FolderPicker) *Server {
+// New creates an API server. rearm, if non-nil, is called to apply a hotkey
+// change live (without restart); pass nil when live re-arming is unavailable.
+func New(cfg *config.Config, pick FolderPicker, rearm func(string) error) *Server {
 	if pick == nil {
 		pick = func() (string, error) { return "", nil }
 	}
-	return &Server{cfg: cfg, pick: pick, hub: newHub()}
+	return &Server{cfg: cfg, pick: pick, rearm: rearm, hub: newHub()}
 }
 
 // Register attaches API routes to the given mux. Every /api handler is wrapped
@@ -78,6 +81,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/config", s.guard(s.handleConfig))
 	mux.HandleFunc("/api/games", s.guard(s.handleGames))
 	mux.HandleFunc("/api/active", s.guard(s.handleActive))
+	mux.HandleFunc("/api/hotkey", s.guard(s.handleHotkey))
 	mux.HandleFunc("/api/backups", s.guard(s.handleBackups))
 	mux.HandleFunc("/api/backups/batch-delete", s.guard(s.handleBatchDelete))
 	mux.HandleFunc("/api/backup", s.guard(s.handleBackup))
@@ -160,6 +164,38 @@ func (s *Server) handleGames(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeErr(w, http.StatusMethodNotAllowed, "method not allowed")
 	}
+}
+
+// handleHotkey validates and persists a new global hotkey, then tries to apply
+// it live. The response's "applied" flag tells the UI whether a restart is
+// needed (false when live re-arm is unavailable or failed).
+func (s *Server) handleHotkey(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeErr(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	var body struct {
+		Hotkey string `json:"hotkey"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if _, err := hotkey.Parse(body.Hotkey); err != nil {
+		writeErr(w, http.StatusBadRequest, "无效热键："+err.Error())
+		return
+	}
+	if err := s.cfg.SetHotkey(body.Hotkey); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	applied := false
+	if s.rearm != nil {
+		if err := s.rearm(body.Hotkey); err == nil {
+			applied = true
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "hotkey": body.Hotkey, "applied": applied})
 }
 
 func (s *Server) handleActive(w http.ResponseWriter, r *http.Request) {

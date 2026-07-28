@@ -468,8 +468,52 @@ async function pickInto(inputId) {
   }
 }
 
+// ---- settings: change global hotkey ----
+function openSettings() {
+  $("hkInput").value = (state.config && state.config.hotkey) || "";
+  $("settingsModal").hidden = false;
+  $("hkInput").focus();
+}
+
+// captureHotkey builds a "Ctrl+Alt+S"-style string from a keydown so the user
+// can just press the combo. Escape is left alone so the modal can close.
+function captureHotkey(e) {
+  if (e.key === "Escape") return;
+  e.preventDefault();
+  const mods = [];
+  if (e.ctrlKey) mods.push("Ctrl");
+  if (e.altKey) mods.push("Alt");
+  if (e.shiftKey) mods.push("Shift");
+  if (e.metaKey) mods.push("Win");
+  const k = e.key;
+  if (["Control", "Alt", "Shift", "Meta", "OS"].includes(k)) {
+    $("hkInput").value = mods.join("+"); // modifiers only, so far
+    return;
+  }
+  const main = k === " " ? "Space" : (k.length === 1 ? k.toUpperCase() : k);
+  $("hkInput").value = [...mods, main].join("+");
+}
+
+async function saveHotkey() {
+  const hk = $("hkInput").value.trim();
+  if (!hk) { toast("请先设置热键", true); return; }
+  try {
+    const r = await api("/api/hotkey", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ hotkey: hk }),
+    });
+    if (state.config) state.config.hotkey = r.hotkey;
+    $("hotkeyHint").textContent = `热键：${r.hotkey}`;
+    toast(r.applied ? `热键已更新并生效：${r.hotkey}` : `热键已保存：${r.hotkey}（重启后生效）`);
+    $("settingsModal").hidden = true;
+  } catch (e) {
+    toast("保存热键失败：" + e.message, true);
+  }
+}
+
 // ---- modal close infrastructure (Esc + backdrop click) ----
-const MODALS = ["gamesModal", "restoreModal", "confirmModal"];
+const MODALS = ["gamesModal", "restoreModal", "settingsModal", "confirmModal"];
 function closeModal(id) {
   if (id === "confirmModal") { closeConfirm(false); return; }
   $(id).hidden = true;
@@ -503,6 +547,10 @@ function bind() {
   };
   $("manageGamesBtn").onclick = openGames;
   $("closeGamesBtn").onclick = () => ($("gamesModal").hidden = true);
+  $("settingsBtn").onclick = openSettings;
+  $("closeSettingsBtn").onclick = () => ($("settingsModal").hidden = true);
+  $("saveHotkeyBtn").onclick = saveHotkey;
+  $("hkInput").addEventListener("keydown", captureHotkey);
   $("saveGameBtn").onclick = saveGame;
   $("confirmRestoreBtn").onclick = confirmRestore;
   $("cancelRestoreBtn").onclick = () => { $("restoreModal").hidden = true; pendingRestore = null; };

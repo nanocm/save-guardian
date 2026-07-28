@@ -19,6 +19,7 @@
         <select id="gameSelect"></select>
       </label>
       <button id="manageGamesBtn" class="ghost">管理档案</button>
+      <button id="settingsBtn" class="ghost">设置</button>
       <a class="github-link" href="https://github.com/nanocm/save-guardian" target="_blank" rel="noopener" title="在 GitHub 上查看">GitHub ↗</a>
     </div>
   </header>
@@ -117,6 +118,21 @@
       <div class="modal-actions">
         <button id="confirmRestoreBtn" class="danger">确认恢复</button>
         <button id="cancelRestoreBtn" class="ghost">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings modal -->
+  <div id="settingsModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="settingsTitle" hidden>
+    <div class="modal-card">
+      <h3 id="settingsTitle">设置</h3>
+      <label class="field block"><span>全局备份热键</span>
+        <input id="hkInput" type="text" placeholder="点此按下组合键，或手动输入，如 Ctrl+Alt+S" />
+      </label>
+      <p class="hint">聚焦输入框后直接按下组合键即可录制。支持 Ctrl / Alt / Shift / Win 组合 + 字母 / 数字 / F1~F12。保存后立即尝试生效，若失败会提示重启。</p>
+      <div class="modal-actions">
+        <button id="saveHotkeyBtn" class="primary">保存热键</button>
+        <button id="closeSettingsBtn" class="ghost">关闭</button>
       </div>
     </div>
   </div>

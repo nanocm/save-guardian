@@ -175,6 +175,15 @@ func (c *Config) DeleteGame(name string) error {
 	return c.Save()
 }
 
+// SetHotkey updates the global backup hotkey and persists it. Validation of
+// the hotkey string format is done by the caller (via hotkey.Parse).
+func (c *Config) SetHotkey(h string) error {
+	c.mu.Lock()
+	c.Hotkey = h
+	c.mu.Unlock()
+	return c.Save()
+}
+
 // SetActive sets the active game after verifying it exists.
 func (c *Config) SetActive(name string) error {
 	if _, ok := c.Game(name); !ok {
