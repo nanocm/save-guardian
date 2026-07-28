@@ -184,6 +184,18 @@ func (c *Config) SetHotkey(h string) error {
 	return c.Save()
 }
 
+// SetPort validates and persists the web UI port. It takes effect on the next
+// launch, since the listener is bound at startup.
+func (c *Config) SetPort(p int) error {
+	if p < 1 || p > 65535 {
+		return errors.New("port must be between 1 and 65535")
+	}
+	c.mu.Lock()
+	c.Port = p
+	c.mu.Unlock()
+	return c.Save()
+}
+
 // SetActive sets the active game after verifying it exists.
 func (c *Config) SetActive(name string) error {
 	if _, ok := c.Game(name); !ok {

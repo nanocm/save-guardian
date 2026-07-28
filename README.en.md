@@ -56,7 +56,7 @@ Souls-like games autosave on death and impose a penalty you can't stop from insi
 
 ## ⚙️ Settings & configuration
 
-Click **“Settings”** in the top-right to **change the global hotkey**: focus the field and press the key combo to record it, or type it manually. It's applied immediately on save (in rare cases it asks you to restart).
+Click **“Settings”** in the top-right to **change the global hotkey** (focus the field and press the key combo to record it, or type it manually — applied immediately on save; in rare cases it asks you to restart) and the **web UI port** (a port change takes effect after a restart).
 
 On first run, `saveguardian.config.json` is created next to the `.exe`:
 
@@ -75,7 +75,7 @@ On first run, `saveguardian.config.json` is created next to the `.exe`:
 
 - `source`: the folder to back up as a whole. (The old `sourceRoot` key is still read and migrated automatically.)
 - `hotkey`: `Ctrl` / `Alt` / `Shift` / `Win` combos + letters / digits / `F1`–`F12`, e.g. `Ctrl+Alt+F5`.
-- `port`: the web UI port; change it if the default is taken.
+- `port`: the web UI port (default 8787). **If it's taken, the app automatically falls back to the next free port**; you can also set it in Settings or edit this field directly (takes effect after a restart).
 
 ## 📦 What a backup looks like
 

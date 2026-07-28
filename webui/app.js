@@ -471,8 +471,25 @@ async function pickInto(inputId) {
 // ---- settings: change global hotkey ----
 function openSettings() {
   $("hkInput").value = (state.config && state.config.hotkey) || "";
+  $("portInput").value = (state.config && state.config.port) || "";
   $("settingsModal").hidden = false;
   $("hkInput").focus();
+}
+
+async function savePort() {
+  const p = parseInt($("portInput").value, 10);
+  if (!p || p < 1 || p > 65535) { toast("端口需在 1–65535 之间", true); return; }
+  try {
+    const r = await api("/api/port", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ port: p }),
+    });
+    if (state.config) state.config.port = r.port;
+    toast(`端口已保存：${r.port}（重启程序后生效）`);
+  } catch (e) {
+    toast("保存端口失败：" + e.message, true);
+  }
 }
 
 // captureHotkey builds a "Ctrl+Alt+S"-style string from a keydown so the user
@@ -550,6 +567,7 @@ function bind() {
   $("settingsBtn").onclick = openSettings;
   $("closeSettingsBtn").onclick = () => ($("settingsModal").hidden = true);
   $("saveHotkeyBtn").onclick = saveHotkey;
+  $("savePortBtn").onclick = savePort;
   $("hkInput").addEventListener("keydown", captureHotkey);
   $("saveGameBtn").onclick = saveGame;
   $("confirmRestoreBtn").onclick = confirmRestore;

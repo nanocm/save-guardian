@@ -39,16 +39,24 @@ func main() {
 		fatal(err)
 	}
 
+	// Bind the port, scanning forward if the configured one is taken, so a busy
+	// port never blocks startup. Persist the chosen port so it stays stable.
+	ln, port, err := listen(cfg.Port)
+	if err != nil {
+		fatal(err)
+	}
+	if port != cfg.Port {
+		log.Printf("端口 %d 被占用，自动改用 %d", cfg.Port, port)
+		cfg.Port = port
+		_ = cfg.Save()
+	}
+
 	mux := http.NewServeMux()
-	srv := api.New(cfg, folderpick.Pick, hotkey.Rearm)
+	srv := api.New(cfg, port, folderpick.Pick, hotkey.Rearm)
 	srv.Register(mux)
 	mux.Handle("/", http.FileServer(http.FS(sub)))
 
-	addr := fmt.Sprintf("127.0.0.1:%d", cfg.Port)
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		fatal(fmt.Errorf("端口 %d 被占用: %w", cfg.Port, err))
-	}
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
 	url := "http://" + addr
 
 	// Global hotkey: back up the active game's source folder, play a sound,
@@ -77,6 +85,22 @@ func main() {
 	if err := http.Serve(ln, mux); err != nil {
 		fatal(err)
 	}
+}
+
+// listen binds to 127.0.0.1 starting at startPort, scanning forward up to 20
+// ports if earlier ones are occupied. It returns the listener and the port it
+// actually bound, so a busy port degrades gracefully instead of failing.
+func listen(startPort int) (net.Listener, int, error) {
+	if startPort <= 0 {
+		startPort = config.DefaultPort
+	}
+	for p := startPort; p < startPort+20; p++ {
+		ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", p))
+		if err == nil {
+			return ln, p, nil
+		}
+	}
+	return nil, 0, fmt.Errorf("端口 %d~%d 均被占用，请在配置文件中改用其它端口", startPort, startPort+19)
 }
 
 // configPath returns the path to config.json next to the executable, falling

@@ -54,6 +54,7 @@ func (h *hub) broadcast(msg string) {
 // Server wires the HTTP API to config and backup logic.
 type Server struct {
 	cfg   *config.Config
+	port  int // the port actually bound at startup (fixed for the process)
 	pick  FolderPicker
 	rearm func(string) error // live-updates the global hotkey; may be nil
 	hub   *hub
@@ -65,13 +66,18 @@ type Server struct {
 	opMu sync.Mutex
 }
 
-// New creates an API server. rearm, if non-nil, is called to apply a hotkey
-// change live (without restart); pass nil when live re-arming is unavailable.
-func New(cfg *config.Config, pick FolderPicker, rearm func(string) error) *Server {
+// New creates an API server. port is the port actually bound at startup and is
+// used for the same-origin check (it is fixed for the process, unlike the
+// desired cfg.Port which the user can change at runtime). rearm, if non-nil,
+// applies a hotkey change live; pass nil when live re-arming is unavailable.
+func New(cfg *config.Config, port int, pick FolderPicker, rearm func(string) error) *Server {
 	if pick == nil {
 		pick = func() (string, error) { return "", nil }
 	}
-	return &Server{cfg: cfg, pick: pick, rearm: rearm, hub: newHub()}
+	if port == 0 {
+		port = cfg.Port
+	}
+	return &Server{cfg: cfg, port: port, pick: pick, rearm: rearm, hub: newHub()}
 }
 
 // Register attaches API routes to the given mux. Every /api handler is wrapped
@@ -82,6 +88,7 @@ func (s *Server) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/games", s.guard(s.handleGames))
 	mux.HandleFunc("/api/active", s.guard(s.handleActive))
 	mux.HandleFunc("/api/hotkey", s.guard(s.handleHotkey))
+	mux.HandleFunc("/api/port", s.guard(s.handlePort))
 	mux.HandleFunc("/api/backups", s.guard(s.handleBackups))
 	mux.HandleFunc("/api/backups/batch-delete", s.guard(s.handleBatchDelete))
 	mux.HandleFunc("/api/backup", s.guard(s.handleBackup))
@@ -106,11 +113,12 @@ func (s *Server) guard(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// allowedOrigin reports whether origin is this local server. Port is set once
-// at load and never mutated, so reading it here is race-free.
+// allowedOrigin reports whether origin is this local server. s.port is the
+// actually-bound port, fixed for the process, so reading it here is race-free
+// even when the user changes the desired port at runtime.
 func (s *Server) allowedOrigin(origin string) bool {
-	return origin == fmt.Sprintf("http://127.0.0.1:%d", s.cfg.Port) ||
-		origin == fmt.Sprintf("http://localhost:%d", s.cfg.Port)
+	return origin == fmt.Sprintf("http://127.0.0.1:%d", s.port) ||
+		origin == fmt.Sprintf("http://localhost:%d", s.port)
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -196,6 +204,28 @@ func (s *Server) handleHotkey(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "hotkey": body.Hotkey, "applied": applied})
+}
+
+// handlePort validates and persists the desired web UI port. It always takes
+// effect on the next launch (the listener is bound at startup), so the current
+// session keeps serving on its original port.
+func (s *Server) handlePort(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		writeErr(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	var body struct {
+		Port int `json:"port"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := s.cfg.SetPort(body.Port); err != nil {
+		writeErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "port": body.Port})
 }
 
 func (s *Server) handleActive(w http.ResponseWriter, r *http.Request) {

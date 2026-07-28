@@ -130,8 +130,13 @@
         <input id="hkInput" type="text" placeholder="点此按下组合键，或手动输入，如 Ctrl+Alt+S" />
       </label>
       <p class="hint">聚焦输入框后直接按下组合键即可录制。支持 Ctrl / Alt / Shift / Win 组合 + 字母 / 数字 / F1~F12。保存后立即尝试生效，若失败会提示重启。</p>
+      <label class="field block"><span>网页界面端口</span>
+        <input id="portInput" type="number" min="1" max="65535" placeholder="8787" />
+      </label>
+      <p class="hint">修改端口需<b>重启程序</b>生效。若端口被占用，程序启动时会自动改用相邻的可用端口。</p>
       <div class="modal-actions">
         <button id="saveHotkeyBtn" class="primary">保存热键</button>
+        <button id="savePortBtn" class="ghost">保存端口</button>
         <button id="closeSettingsBtn" class="ghost">关闭</button>
       </div>
     </div>

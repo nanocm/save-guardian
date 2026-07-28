@@ -19,7 +19,7 @@ func testServer(t *testing.T) (*Server, *http.ServeMux) {
 		t.Fatal(err)
 	}
 	cfg.Port = 8787 // matches the default; make the allowed origin explicit
-	s := New(cfg, nil, nil)
+	s := New(cfg, 8787, nil, nil)
 	mux := http.NewServeMux()
 	s.Register(mux)
 	return s, mux
@@ -185,5 +185,29 @@ func TestHotkeyEndpoint(t *testing.T) {
 	}
 	if s.cfg.Hotkey != "Ctrl+Alt+F5" {
 		t.Fatalf("config changed on invalid hotkey: %q", s.cfg.Hotkey)
+	}
+}
+
+func TestPortEndpoint(t *testing.T) {
+	s, mux := testServer(t)
+	post := func(p string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/api/port", strings.NewReader(`{"port":`+p+`}`))
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		return rec
+	}
+	if rec := post("9001"); rec.Code != http.StatusOK {
+		t.Fatalf("valid port rejected: %d %s", rec.Code, rec.Body.String())
+	}
+	if s.cfg.Port != 9001 {
+		t.Fatalf("port not persisted: %d", s.cfg.Port)
+	}
+	// The same-origin check must still use the actually-bound port (8787),
+	// not the changed desired port, so the running UI keeps working.
+	if !s.allowedOrigin("http://127.0.0.1:8787") || s.allowedOrigin("http://127.0.0.1:9001") {
+		t.Fatal("guard should track the bound port, not the changed cfg.Port")
+	}
+	if rec := post("70000"); rec.Code != http.StatusBadRequest {
+		t.Fatalf("out-of-range port accepted: %d", rec.Code)
 	}
 }
