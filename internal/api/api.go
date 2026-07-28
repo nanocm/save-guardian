@@ -55,6 +55,12 @@ type Server struct {
 	cfg  *config.Config
 	pick FolderPicker
 	hub  *hub
+
+	// opMu serializes state-changing backup operations (create/restore/
+	// delete/update-note) so that, e.g., a hotkey backup cannot run in the
+	// middle of a restore, and concurrent backups cannot collide on the same
+	// timestamp directory.
+	opMu sync.Mutex
 }
 
 // New creates an API server.
@@ -178,7 +184,10 @@ func (s *Server) handleBackups(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == http.MethodDelete {
-		if err := m.Delete(r.URL.Query().Get("timestamp")); err != nil {
+		s.opMu.Lock()
+		err := m.Delete(r.URL.Query().Get("timestamp"))
+		s.opMu.Unlock()
+		if err != nil {
 			writeErr(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -195,7 +204,10 @@ func (s *Server) handleBackups(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		if err := m.UpdateNote(body.Timestamp, body.Note); err != nil {
+		s.opMu.Lock()
+		err := m.UpdateNote(body.Timestamp, body.Note)
+		s.opMu.Unlock()
+		if err != nil {
 			writeErr(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -230,7 +242,9 @@ func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	s.opMu.Lock()
 	meta, err := m.Create(body.Note, body.Type)
+	s.opMu.Unlock()
 	if err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
@@ -257,7 +271,9 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	s.opMu.Lock()
 	safety, err := m.Restore(body.Timestamp)
+	s.opMu.Unlock()
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err.Error())
 		return
@@ -296,11 +312,13 @@ func (s *Server) handleBatchDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	failed := []string{}
+	s.opMu.Lock()
 	for _, ts := range body.Timestamps {
 		if err := m.Delete(ts); err != nil {
 			failed = append(failed, ts)
 		}
 	}
+	s.opMu.Unlock()
 	s.hub.broadcast("update")
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "failed": failed})
 }
@@ -343,7 +361,9 @@ func (s *Server) HotkeyBackup() (*backup.Meta, error) {
 	if err != nil {
 		return nil, err
 	}
+	s.opMu.Lock()
 	meta, err := m.Create("热键备份", "hotkey")
+	s.opMu.Unlock()
 	if err != nil {
 		return nil, err
 	}
