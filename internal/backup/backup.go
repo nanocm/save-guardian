@@ -253,19 +253,149 @@ func (m *Manager) Restore(timestamp string) (safety *Meta, err error) {
 		return safety, err
 	}
 
-	old := dst + ".sg-old"
-	_ = os.RemoveAll(old)
-	if _, statErr := os.Stat(dst); statErr == nil {
-		if err := os.Rename(dst, old); err != nil {
-			return safety, err
+	dirty, err := m.replaceDir(staging, dst)
+	if err == nil {
+		return safety, nil
+	}
+	// The in-place fallback may have written some files before failing, leaving
+	// the save as a mix of old and new. Put the pre-restore state back so the
+	// player is never left with an inconsistent save they must repair by hand.
+	if dirty && safety != nil {
+		snapshot := filepath.Join(m.BackupRoot, safety.Timestamp)
+		if rbErr := overwriteInPlace(snapshot, dst, metaFileName); rbErr == nil {
+			return safety, fmt.Errorf("恢复失败，已自动回滚到恢复前的状态：%w", err)
+		}
+		return safety, fmt.Errorf("恢复失败，且自动回滚未完成，存档可能是新旧混合状态。"+
+			"请先不要进入游戏，待游戏完全退出后用「安全快照 %s」再恢复一次：%w", safety.Timestamp, err)
+	}
+	return safety, err
+}
+
+// replaceDir makes dst hold exactly what staging holds.
+//
+// The fast path is an atomic swap (move dst aside, move staging into place) so
+// that an interrupted restore can never leave a half-written save. On Windows,
+// however, renaming a directory fails with "Access is denied" while any process
+// holds a handle to it or to a file inside it — the game sitting at its title
+// screen, an antivirus scanner, the search indexer, cloud sync, or an open
+// Explorer window. Those locks are typically transient, so retry briefly and
+// then fall back to overwriting dst's contents file by file: less atomic, but
+// per-file writes succeed where a directory rename cannot, and the pre-restore
+// snapshot already protects the previous state.
+// It reports dirty=true when the fallback may have partially written dst, so
+// the caller can roll back to the pre-restore snapshot.
+func (m *Manager) replaceDir(staging, dst string) (dirty bool, err error) {
+	m.cleanupOld(dst)
+	var lastErr error
+	for attempt := 0; attempt < 4; attempt++ {
+		if attempt > 0 {
+			time.Sleep(time.Duration(attempt) * 200 * time.Millisecond)
+		}
+		// The atomic swap either fully succeeds or rolls itself back, so it
+		// never leaves dst dirty.
+		if err := m.swapDir(staging, dst); err == nil {
+			return false, nil
+		} else {
+			lastErr = err
 		}
 	}
-	if err := os.Rename(staging, dst); err != nil {
-		_ = os.Rename(old, dst)
-		return safety, err
+	if err := overwriteInPlace(staging, dst, ""); err != nil {
+		return true, fmt.Errorf("原子替换失败（%v）；就地覆盖也未成功：%w"+
+			"（请确认已完全退出游戏，并暂时关闭杀毒软件或云同步后重试）", lastErr, err)
 	}
-	_ = os.RemoveAll(old)
-	return safety, nil
+	return false, nil
+}
+
+// swapDir performs one atomic swap attempt, putting the live folder back if the
+// second rename fails. Each attempt uses a fresh sidelined name so a leftover
+// locked directory from an earlier failure can never block future restores.
+func (m *Manager) swapDir(staging, dst string) error {
+	old := dst + ".sg-old-" + m.now().Format("20060102-150405")
+	moved := false
+	if _, err := os.Stat(dst); err == nil {
+		if err := os.Rename(dst, old); err != nil {
+			return err
+		}
+		moved = true
+	}
+	if err := os.Rename(staging, dst); err != nil {
+		if moved {
+			_ = os.Rename(old, dst) // restore the live save
+		}
+		return err
+	}
+	if moved {
+		_ = os.RemoveAll(old)
+	}
+	return nil
+}
+
+// cleanupOld best-effort removes sidelined folders left behind by earlier
+// restores whose cleanup was blocked by a file lock, so old save copies do not
+// accumulate next to the live save.
+func (m *Manager) cleanupOld(dst string) {
+	matches, err := filepath.Glob(dst + ".sg-old-*")
+	if err != nil {
+		return
+	}
+	for _, p := range matches {
+		_ = os.RemoveAll(p)
+	}
+}
+
+// overwriteInPlace makes dst match src by writing over existing files and
+// deleting whatever src does not contain, skipping a top-level file named skip.
+// This is the non-atomic fallback used when dst cannot be renamed, and also the
+// rollback path when that fallback fails part-way.
+func overwriteInPlace(src, dst, skip string) error {
+	want := make(map[string]bool)
+	err := filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		if rel == "." {
+			return nil
+		}
+		if skip != "" && rel == skip {
+			return nil
+		}
+		want[rel] = true
+		target := filepath.Join(dst, rel)
+		if info.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		_, _, err = copyFile(path, target)
+		return err
+	})
+	if err != nil {
+		return err
+	}
+	// Prune files from the previous save that this backup does not contain.
+	var stale []string
+	_ = filepath.Walk(dst, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		rel, relErr := filepath.Rel(dst, path)
+		if relErr != nil || rel == "." || want[rel] {
+			return nil
+		}
+		stale = append(stale, path)
+		return nil
+	})
+	// Delete deepest paths first so directories are empty by the time we
+	// remove them.
+	sort.Slice(stale, func(i, j int) bool { return len(stale[i]) > len(stale[j]) })
+	for _, p := range stale {
+		if err := os.RemoveAll(p); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // copyTree copies all files from src into dst, returning file metadata.

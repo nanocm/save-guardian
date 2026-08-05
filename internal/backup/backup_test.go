@@ -184,6 +184,95 @@ func TestTimestampTraversalRejected(t *testing.T) {
 	}
 }
 
+func TestOverwriteInPlaceReplacesAndPrunes(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "src")
+	dst := filepath.Join(root, "dst")
+	// The backup content we want dst to end up with.
+	writeFile(t, filepath.Join(src, "maingame1.sav"), "GOOD")
+	writeFile(t, filepath.Join(src, "sub", "extra.dat"), "SUB-GOOD")
+	// The live folder: one file to overwrite, plus leftovers to prune.
+	writeFile(t, filepath.Join(dst, "maingame1.sav"), "STALE")
+	writeFile(t, filepath.Join(dst, "orphan.sav"), "ORPHAN")
+	writeFile(t, filepath.Join(dst, "olddir", "junk.dat"), "JUNK")
+
+	if err := overwriteInPlace(src, dst, ""); err != nil {
+		t.Fatal(err)
+	}
+	if got := readFile(t, filepath.Join(dst, "maingame1.sav")); got != "GOOD" {
+		t.Fatalf("existing file not overwritten: %q", got)
+	}
+	if got := readFile(t, filepath.Join(dst, "sub", "extra.dat")); got != "SUB-GOOD" {
+		t.Fatalf("nested file not written: %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(dst, "orphan.sav")); !os.IsNotExist(err) {
+		t.Fatal("orphan file was not pruned")
+	}
+	if _, err := os.Stat(filepath.Join(dst, "olddir")); !os.IsNotExist(err) {
+		t.Fatal("orphan directory was not pruned")
+	}
+}
+
+// TestReplaceDirFallsBackWhenRenameFails covers the Windows "Access is denied"
+// failure mode: the live folder cannot be renamed, but writing files inside it
+// still works. A read-only parent directory reproduces exactly that shape on
+// Unix (rename needs write permission on the parent; writes inside dst do not).
+func TestReplaceDirFallsBackWhenRenameFails(t *testing.T) {
+	root := t.TempDir()
+	holder := filepath.Join(root, "holder")
+	dst := filepath.Join(holder, "save")
+	staging := filepath.Join(root, "staging")
+	writeFile(t, filepath.Join(dst, "maingame1.sav"), "LIVE")
+	writeFile(t, filepath.Join(staging, "maingame1.sav"), "FROM-BACKUP")
+
+	if err := os.Chmod(holder, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(holder, 0o755) // let TempDir cleanup succeed
+
+	// Confirm the environment actually denies the rename (root ignores perms).
+	if err := os.Rename(dst, dst+".probe"); err == nil {
+		os.Rename(dst+".probe", dst)
+		t.Skip("environment allows renaming under a read-only parent; cannot simulate the lock")
+	}
+
+	m, err := New("g", dst, filepath.Join(root, "bak"), fixedNow())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dirty, err := m.replaceDir(staging, dst)
+	if err != nil {
+		t.Fatalf("replaceDir should fall back to in-place overwrite: %v", err)
+	}
+	if dirty {
+		t.Fatal("a successful fallback must not report dst as dirty")
+	}
+	if got := readFile(t, filepath.Join(dst, "maingame1.sav")); got != "FROM-BACKUP" {
+		t.Fatalf("fallback did not restore backup content: %q", got)
+	}
+}
+
+// TestOverwriteInPlaceSkipsMeta guards the rollback path: rolling back from a
+// snapshot directory must not leak meta.json into the live save folder.
+func TestOverwriteInPlaceSkipsMeta(t *testing.T) {
+	root := t.TempDir()
+	snapshot := filepath.Join(root, "snap")
+	dst := filepath.Join(root, "save")
+	writeFile(t, filepath.Join(snapshot, "maingame1.sav"), "OLD-STATE")
+	writeFile(t, filepath.Join(snapshot, metaFileName), `{"note":"x"}`)
+	writeFile(t, filepath.Join(dst, "maingame1.sav"), "MIXED")
+
+	if err := overwriteInPlace(snapshot, dst, metaFileName); err != nil {
+		t.Fatal(err)
+	}
+	if got := readFile(t, filepath.Join(dst, "maingame1.sav")); got != "OLD-STATE" {
+		t.Fatalf("rollback did not restore the pre-restore state: %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(dst, metaFileName)); !os.IsNotExist(err) {
+		t.Fatal("meta.json leaked into the live save folder")
+	}
+}
+
 func TestVerifyDetectsCorruption(t *testing.T) {
 	src, bak := setup(t)
 	m, _ := New("g", src, bak, fixedNow())
